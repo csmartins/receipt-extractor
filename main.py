@@ -60,5 +60,12 @@ try:
             print("End of products table, {0} products found".format(item_count-1))
             break
     
+    total_billing = driver.find_element_by_css_selector(".totalNumb.txtMax").text
+    receipt_data["total"] = total_billing
+
+    payment_type = driver.find_element_by_xpath("/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']").text
+    receipt_data["payment"] = payment_type
+
+    print(receipt_data)
 finally:
     driver.quit()
