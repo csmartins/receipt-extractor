@@ -1,9 +1,37 @@
-from cgitb import text
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+
+def get_table_line(tr_id):
+    line = driver.find_element_by_id(tr_id)
+    
+    product_name = line.find_element_by_class_name("txtTit").text
+    
+    raw_product_code = line.find_element_by_class_name("RCod").text
+    product_code = raw_product_code.split(" ")[1]
+
+    raw_product_quantity = line.find_element_by_class_name("Rqtd").text
+    product_quantity = raw_product_quantity.split(".:")[1]
+
+    raw_unity_type = line.find_element_by_class_name("RUN").text
+    unity_type = raw_unity_type.split(": ")[1]
+
+    raw_unity_value = line.find_element_by_class_name("RvlUnit").text
+    unity_value = raw_unity_value.split(".:   ")[1]
+
+    total_value = line.find_element_by_class_name("valor").text
+
+    product = dict()
+    product["product_name"] = product_name
+    product["product_code"] = product_code
+    product["product_quantity"] = product_quantity
+    product["unity_type"] = unity_type
+    product["unity_value"] = unity_value
+    product["total_value"] = total_value
+    return product
 
 receipt_url = "http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220331487473003538650010002551641625634243|2|1|2|d953fa67b328f9812dafcbad42739acef04e655c"
 driver = webdriver.Chrome(executable_path="./chromedriver")
@@ -19,5 +47,18 @@ try:
     for element in text_center_elements:
         if not element.get_attribute("id"):
             receipt_data["store"] = element.find_element_by_class_name("txtTopo").text
+    
+    receipt_data["products"] = list()
+    item_count = 1
+    while(True):
+        try:
+            product = get_table_line("Item + {0}".format(item_count))
+            receipt_data["products"].append(product)
+
+            item_count = item_count + 1
+        except NoSuchElementException:
+            print("End of products table, {0} products found".format(item_count-1))
+            break
+    
 finally:
     driver.quit()
