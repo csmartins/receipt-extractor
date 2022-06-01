@@ -63,8 +63,11 @@ try:
     total_billing = driver.find_element_by_css_selector(".totalNumb.txtMax").text
     receipt_data["total"] = total_billing
 
-    payment_type = driver.find_element_by_xpath("/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']").text
-    receipt_data["payment"] = payment_type
+    payment_type = driver.find_element_by_xpath("/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']")
+    receipt_data["payment"] = payment_type.text
+
+    date = driver.find_element_by_xpath("/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='infos']/div[@class='ui-collapsible ui-collapsible-inset ui-corner-all ui-collapsible-themed-content'][1]/div[@class='ui-collapsible-content ui-body-inherit']/ul[@class='ui-listview']/li[@class='ui-li-static ui-body-inherit ui-first-child ui-last-child']")
+    receipt_data["datetime"] = date.text.split("Emissão: ")[1]
 
     print(receipt_data)
 finally:
