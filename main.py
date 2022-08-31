@@ -5,6 +5,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 
+import csv
+
 def get_table_line(tr_id):
     line = driver.find_element_by_id(tr_id)
     
@@ -33,6 +35,18 @@ def get_table_line(tr_id):
     product["total_value"] = total_value
     return product
 
+def save_to_csv(receipts):
+    columns = ["product_name","product_code","product_quantity","unity_type","unity_value","total_value","url","store","total","payment","datetime"]
+    try:
+        with open("receipts.csv", 'w') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=columns)
+            writer.writeheader()
+            for receipt in receipts:
+                writer.writerow(receipt)
+    except IOError:
+        print("I/O error")
+
+
 receipt_url = "http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220331487473003538650010002551641625634243|2|1|2|d953fa67b328f9812dafcbad42739acef04e655c"
 driver = webdriver.Chrome(executable_path="./chromedriver")
 driver.get(receipt_url)
@@ -48,18 +62,6 @@ try:
         if not element.get_attribute("id"):
             receipt_data["store"] = element.find_element_by_class_name("txtTopo").text
     
-    receipt_data["products"] = list()
-    item_count = 1
-    while(True):
-        try:
-            product = get_table_line("Item + {0}".format(item_count))
-            receipt_data["products"].append(product)
-
-            item_count = item_count + 1
-        except NoSuchElementException:
-            print("End of products table, {0} products found".format(item_count-1))
-            break
-    
     total_billing = driver.find_element_by_css_selector(".totalNumb.txtMax").text
     receipt_data["total"] = total_billing
 
@@ -69,6 +71,22 @@ try:
     date = driver.find_element_by_xpath("/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='infos']/div[@class='ui-collapsible ui-collapsible-inset ui-corner-all ui-collapsible-themed-content'][1]/div[@class='ui-collapsible-content ui-body-inherit']/ul[@class='ui-listview']/li[@class='ui-li-static ui-body-inherit ui-first-child ui-last-child']")
     tmp_date = date.text.split("Emissão: ")[1]
     receipt_data["datetime"] = tmp_date.split(" - Via Consumidor")[0]
-    print(receipt_data)
+
+    products = list()
+    item_count = 1
+    while(True):
+        try:
+            product = get_table_line("Item + {0}".format(item_count))
+            product.update(receipt_data)
+            products.append(product)
+
+            item_count = item_count + 1
+        except NoSuchElementException:
+            print("End of products table, {0} products found".format(item_count-1))
+            break
+    
+    # receipts = [receipt_data]
+    print(products)
+    save_to_csv(products)
 finally:
     driver.quit()
