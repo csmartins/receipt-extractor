@@ -3,7 +3,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
-
+from selenium.common.exceptions import TimeoutException
 import time
 
 def extract_product_info(product_sku):
@@ -18,7 +18,6 @@ def extract_product_info(product_sku):
         )
         # has_results = driver.find_element_by_class_name("noResultsFound-root-2wn")
         result_message = driver.find_element_by_xpath(results_message_xpath).text
-        print(result_message)
 
         # when no products are found the message is slightly the same, it only doesn't have the number of results
         if "Foram encontrados resultados" in result_message:
@@ -46,9 +45,9 @@ def extract_product_info(product_sku):
            product_type = product_type_path[2]
         return (product_name, product_type, product_sku)
     except NoSuchElementException:
-        # 
-        # time.sleep(60)
-        # print("test")
         raise
+    except TimeoutException:
+        if driver.find_element_by_class_name("errorView-root-2vM"):
+            return None
     finally:
         driver.quit()
