@@ -42,7 +42,7 @@ def extract_product_info(product_sku):
         product_type_path = driver.find_elements_by_class_name("breadcrumbs-link-1sU")
         product_type = ""
         if product_type_path:
-           product_type = product_type_path[2]
+           product_type = product_type_path[2].text
         return (product_name, product_type, product_sku)
     except NoSuchElementException:
         raise

@@ -40,5 +40,8 @@ def extract_product_info(product_sku):
     except TimeoutException:
         not_found = driver.find_element_by_class_name("vtex-search-result-3-x-searchNotFound")
         return None
+    except Exception as e:
+        print("Failed extraction for product {0}".format(product_sku))
+        print(e)
     finally:
         driver.quit()
