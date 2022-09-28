@@ -4,7 +4,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
+from vendor import opensearch
 
+import configparser
 import hortifruti.extractor
 import zonasul.extractor
 import csv
@@ -92,8 +94,12 @@ def extract_receipt_info(driver, receipt_url):
 
 if __name__ == "__main__":
 
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+
     receipt_url = "http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220331487473003538650010002551641625634243|2|1|2|d953fa67b328f9812dafcbad42739acef04e655c"
-    driver = webdriver.Chrome(executable_path="./chromedriver")
+    # extract to config ini
+    driver = webdriver.Chrome(executable_path=config["selenium"]["DriverPath"])
     products = extract_receipt_info(driver, receipt_url)
     # # # print(products)
     for product in products:
@@ -106,5 +112,14 @@ if __name__ == "__main__":
         if product_details:
             product["product_name"] = product_details[0]
             product["product_type"] = product_details[1]
-
+        opensearch.save_to_opensearch(
+            host=config["opensearch"]["Host"],
+            port=config["opensearch"]["Port"],
+            user=config["opensearch"]["User"],
+            password=config["opensearch"]["Password"],
+            product=product
+        )
+        # add save to mongo
+        # save receipt to mongo too
+        
     save_to_csv(products)
