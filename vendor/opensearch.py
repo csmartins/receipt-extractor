@@ -34,4 +34,5 @@ def save_to_opensearch(host, port, user, password, product):
         body = product,
         refresh = True
     )
-    print(response)
+    # TODO: better failure treatment
+    # print(response)

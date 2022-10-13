@@ -56,6 +56,17 @@ services:
       OPENSEARCH_HOSTS: '["https://opensearch-node1:9200","https://opensearch-node2:9200"]' # must be a string with no spaces when specified as an environment variable
     networks:
       - opensearch-net
+  mongodb:
+    image: mongo:5.0
+    ports:
+      - 27017:27017
+    expose:
+      - "27017"
+    volumes:
+      - ~/apps/mongo:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin
 
 volumes:
   opensearch-data1:
