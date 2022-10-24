@@ -16,8 +16,8 @@ def extract_product_info(product_sku):
         page_contents = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, results_message_xpath))
         )
-        # has_results = driver.find_element_by_class_name("noResultsFound-root-2wn")
-        result_message = driver.find_element_by_xpath(results_message_xpath).text
+        # has_results = driver.find_element(By.CLASS_NAME, "noResultsFound-root-2wn")
+        result_message = driver.find_element(By.XPATH, results_message_xpath).text
 
         # when no products are found the message is slightly the same, it only doesn't have the number of results
         if "Foram encontrados resultados" in result_message:
@@ -29,17 +29,17 @@ def extract_product_info(product_sku):
             EC.presence_of_element_located((By.CLASS_NAME, "searchPage-items-1Ee"))
         )
         # returns only the first element found with such class, maybe in the future I want to get all of them
-        product = driver.find_element_by_class_name("item-infosLink-1xn")
+        product = driver.find_element(By.CLASS_NAME, "item-infosLink-1xn")
         product.click()
         results = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CLASS_NAME, "productFullDetail-root-1R8"))
         )
 
-        product_name = driver.find_element_by_class_name("productFullDetail-productName-Isc").text
+        product_name = driver.find_element(By.CLASS_NAME, "productFullDetail-productName-Isc").text
 
         # In the product type path (under the top menu) usually the type of the product is the third 
         # but sometimes the product doesn't have that info in the website, therefore the type will be empty
-        product_type_path = driver.find_elements_by_class_name("breadcrumbs-link-1sU")
+        product_type_path = driver.find_elements(By.CLASS_NAME, "breadcrumbs-link-1sU")
         product_type = ""
         if product_type_path:
            product_type = product_type_path[2].text
@@ -47,7 +47,7 @@ def extract_product_info(product_sku):
     except NoSuchElementException:
         raise
     except TimeoutException:
-        if driver.find_element_by_class_name("errorView-root-2vM"):
+        if driver.find_element(By.CLASS_NAME, "errorView-root-2vM"):
             return None
     finally:
         driver.quit()

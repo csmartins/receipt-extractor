@@ -4,33 +4,38 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.chrome.service import Service
 from vendor import opensearch
 from vendor import mongo
+from vendor import sqs
 
 import configparser
 import hortifruti.extractor
 import zonasul.extractor
 import csv
+import logging
+import ast
+
 
 
 def get_table_line(driver, tr_id):
-    line = driver.find_element_by_id(tr_id)
+    line = driver.find_element(By.ID, tr_id)
     
-    product_name = line.find_element_by_class_name("txtTit").text
+    product_name = line.find_element(By.CLASS_NAME, "txtTit").text
     
-    raw_product_code = line.find_element_by_class_name("RCod").text
+    raw_product_code = line.find_element(By.CLASS_NAME, "RCod").text
     product_code = raw_product_code.split(" ")[1]
 
-    raw_product_quantity = line.find_element_by_class_name("Rqtd").text
+    raw_product_quantity = line.find_element(By.CLASS_NAME, "Rqtd").text
     product_quantity = raw_product_quantity.split(".:")[1]
 
-    raw_unity_type = line.find_element_by_class_name("RUN").text
+    raw_unity_type = line.find_element(By.CLASS_NAME, "RUN").text
     unity_type = raw_unity_type.split(": ")[1]
 
-    raw_unity_value = line.find_element_by_class_name("RvlUnit").text
+    raw_unity_value = line.find_element(By.CLASS_NAME, "RvlUnit").text
     unity_value = raw_unity_value.split(".:   ")[1]
 
-    total_value = line.find_element_by_class_name("valor").text
+    total_value = line.find_element(By.CLASS_NAME, "valor").text
 
     product = dict()
     product["product_name"] = product_name
@@ -61,18 +66,18 @@ def extract_receipt_info(driver, receipt_url):
         receipt_data = dict()
         receipt_data["url"] = receipt_url
 
-        text_center_elements = driver.find_elements_by_class_name("txtCenter")
+        text_center_elements = driver.find_elements(By.CLASS_NAME, "txtCenter")
         for element in text_center_elements:
             if not element.get_attribute("id"):
-                receipt_data["store"] = element.find_element_by_class_name("txtTopo").text
+                receipt_data["store"] = element.find_element(By.CLASS_NAME, "txtTopo").text
         
-        total_billing = driver.find_element_by_css_selector(".totalNumb.txtMax").text
+        total_billing = driver.find_element(By.CSS_SELECTOR, ".totalNumb.txtMax").text
         receipt_data["total"] = total_billing
 
-        payment_type = driver.find_element_by_xpath("/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']")
+        payment_type = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']")
         receipt_data["payment"] = payment_type.text
 
-        date = driver.find_element_by_xpath("/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='infos']/div[@class='ui-collapsible ui-collapsible-inset ui-corner-all ui-collapsible-themed-content'][1]/div[@class='ui-collapsible-content ui-body-inherit']/ul[@class='ui-listview']/li[@class='ui-li-static ui-body-inherit ui-first-child ui-last-child']")
+        date = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='infos']/div[@class='ui-collapsible ui-collapsible-inset ui-corner-all ui-collapsible-themed-content'][1]/div[@class='ui-collapsible-content ui-body-inherit']/ul[@class='ui-listview']/li[@class='ui-li-static ui-body-inherit ui-first-child ui-last-child']")
         tmp_date = date.text.split("Emissão: ")[1]
         receipt_data["datetime"] = tmp_date.split(" - Via Consumidor")[0]
 
@@ -123,12 +128,16 @@ def save_receipt_data(mongo_uri, database, products):
 
 if __name__ == "__main__":
 
+    logging.basicConfig()
+    # logging.root.setLevel(logging.NOTSET)
+
     config = configparser.ConfigParser()
     config.read("config.ini")
 
-    receipt_url = "http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220331487473003538650010002551641625634243|2|1|2|d953fa67b328f9812dafcbad42739acef04e655c"
-    # extract to config ini
-    driver = webdriver.Chrome(executable_path=config["selenium"]["DriverPath"])
+    receipt_message = ast.literal_eval(sqs.get_one_message(config["sqs"]["receipt_queue_url"]))
+    receipt_url = receipt_message['receipt_url']
+    selenium_service = Service(executable_path=config["selenium"]["DriverPath"])
+    driver = webdriver.Chrome(service=selenium_service)
     products = extract_receipt_info(driver, receipt_url)
 
     # # # print(products)
