@@ -176,6 +176,7 @@ if __name__ == "__main__":
                     message = dict()
                     message["receipt_url"] = receipt_url
                     message["product"] = product
+                    message["product"]["store"] = receipt_data["store"]
                     if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
                         sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
                     elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:

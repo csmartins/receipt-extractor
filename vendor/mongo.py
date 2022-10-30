@@ -45,3 +45,18 @@ def count_items(uri, database, collection, data):
         raise
     finally:
         mongodb_client.close()
+
+def update_item(uri, database, collection, filter, change):
+    mongodb_client = MongoClient(uri)
+    
+    try:
+        mongo_database = mongodb_client[database]
+        mongo_collection = mongo_database[collection]
+
+        product_result = mongo_collection.update_one(filter=filter, update=change)
+        return product_result
+    except Exception as e:
+        print(e)
+        raise
+    finally:
+        mongodb_client.close()
