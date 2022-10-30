@@ -45,6 +45,18 @@ def get_one_message(queue_url):
     else:
         return message['Body']
 
-
-# print(get_one_message("http://localhost:4566/000000000000/receipts"))
-print(get_queue_info("http://localhost:4566/000000000000/receipts"))
+def send_one_message(queue_url, message_body, message_attributes=None):
+    if not message_attributes:
+        message_attributes = {}
+    
+    try:
+        response = sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=message_body,
+            MessageAttributes=message_attributes
+        )
+    except ClientError as error:
+        logger.exception("Send message to %s failed: %s", queue_url, message_body)
+        raise error
+    else:
+        return response

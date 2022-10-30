@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "receipt-extractor"
+version = "0.1.0"
+description = "Extractor of Brazilian receipts information from government website"
+authors = ["Cadu Martins <csmartins.personal@gmail.com>"]
+readme = "README.md"
+packages = [{include = "receipt_extractor"}]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+selenium = "*"
+pandas = "*"
+opensearch-py = "*"
+pymongo = "*"
+localstack = "*"
+
+
+[tool.poetry.dev-dependencies]
+pytest = "*"
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

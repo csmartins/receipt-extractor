@@ -3,15 +3,12 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.service import Service
-from vendor import opensearch
 from vendor import mongo
 from vendor import sqs
 
 import configparser
-import hortifruti.extractor
-import zonasul.extractor
 import csv
 import logging
 import ast
@@ -57,6 +54,16 @@ def save_to_csv(receipts):
     except IOError:
         print("I/O error")
 
+def get_payment_method(driver):
+    try:
+        # try first the path when receipt has discounts
+        payment_method = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']")
+    except NoSuchElementException:
+        # if fails, it tries the path when doesn't
+        payment_method = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][3]/label[@class='tx']")
+    finally:
+        return payment_method.text
+
 def extract_receipt_info(driver, receipt_url):
     driver.get(receipt_url)
     try:
@@ -73,10 +80,9 @@ def extract_receipt_info(driver, receipt_url):
         
         total_billing = driver.find_element(By.CSS_SELECTOR, ".totalNumb.txtMax").text
         receipt_data["total"] = total_billing
-
-        payment_type = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']")
-        receipt_data["payment"] = payment_type.text
-
+        
+        receipt_data["payment"] = get_payment_method(driver)
+        
         date = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='infos']/div[@class='ui-collapsible ui-collapsible-inset ui-corner-all ui-collapsible-themed-content'][1]/div[@class='ui-collapsible-content ui-body-inherit']/ul[@class='ui-listview']/li[@class='ui-li-static ui-body-inherit ui-first-child ui-last-child']")
         tmp_date = date.text.split("Emissão: ")[1]
         receipt_data["datetime"] = tmp_date.split(" - Via Consumidor")[0]
@@ -86,15 +92,14 @@ def extract_receipt_info(driver, receipt_url):
         while(True):
             try:
                 product = get_table_line(driver, "Item + {0}".format(item_count))
-                product.update(receipt_data)
                 products.append(product)
-
                 item_count = item_count + 1
             except NoSuchElementException:
                 print("End of products table, {0} products found".format(item_count-1))
                 break
-        
-        return products
+        receipt_data["products"] = products
+        return receipt_data
+    
     finally:
         driver.quit()
 
@@ -134,82 +139,37 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
 
-    receipt_message = ast.literal_eval(sqs.get_one_message(config["sqs"]["receipt_queue_url"]))
-    receipt_url = receipt_message['receipt_url']
-    selenium_service = Service(executable_path=config["selenium"]["DriverPath"])
-    driver = webdriver.Chrome(service=selenium_service)
-    products = extract_receipt_info(driver, receipt_url)
+    while True:
+        try:
+            receipt_message = ast.literal_eval(sqs.get_one_message(config["sqs"]["receipt_queue_url"]))
+            receipt_url = receipt_message['receipt_url']
+            selenium_service = Service(executable_path=config["selenium"]["DriverPath"])
+            driver = webdriver.Chrome(service=selenium_service)
+            receipt_data = extract_receipt_info(driver, receipt_url)
+            print(receipt_data)
+            products = receipt_data.pop("products")
 
-    # # # print(products)
-    for product in products:
-        if product["store"] == "HORTIGIL HORTIFRUTI S/A":
-            product_details = hortifruti.extractor.extract_product_info(product["product_code"])
-            # print(product_details)
-        elif product["store"] == "ZONA SUL":
-            product_details = zonasul.extractor.extract_product_info(product["product_code"])
-        print(product["product_code"], product_details)
-        if product_details:
-            product["product_name"] = product_details[0]
-            product["product_type"] = product_details[1]
-        # In opensearch saving the product with all data needed
-        print("Save product info to opensearch")
-        opensearch.save_to_opensearch(
-            host=config["opensearch"]["Host"],
-            port=config["opensearch"]["Port"],
-            user=config["opensearch"]["User"],
-            password=config["opensearch"]["Password"],
-            product=product
-        )
-        # In mongo saving only metadata about the product (no data related to a specific receipt)
-        print("Search if product already exists")
-        result = mongo.count_items(
-            uri=config["mongodb"]["ConnString"],
-            database=config["mongodb"]["Database"],
-            collection="products",
-            data={
-                "product_name": product["product_name"],
-                "product_code": product["product_code"],
-                "store": product["store"]
-            }
-        )
-        if result == 0:
-            print("Save product metadata to mongo")
-            mongo_product = dict()
-            mongo_product["product_name"] = product["product_name"]
-            mongo_product["product_code"] = product["product_code"]
-            # TODO: unit test when product details extraction fails 
-            mongo_product["product_type"] = "" or product.get("product_type")
-            mongo_product["unity_type"] = product["unity_type"]
-            mongo_product["store"] = product["store"]
+            # removing products from receipt data and substitute for empty list
+            receipt_data["products"] = list()
+            # save receipt to mongo
+            print("Saving receipt to mongo")
             mongo_product_id = mongo.save_to_mongo(
-                uri=config["mongodb"]["ConnString"],
-                database=config["mongodb"]["Database"],
-                collection="products",
-                data=mongo_product
+                    uri=config["mongodb"]["ConnString"],
+                    database=config["mongodb"]["Database"],
+                    collection="receipts",
+                    data=receipt_data
             )
-            #print("product saved", mongo_product_id)
-            product["product_id"] = mongo_product_id
-        elif result > 1:
-            print("Alert: duplicated product")
-            #TODO raise exception
-        else:
-            print("Product already exists, skipping")
-            mongo_product = mongo.search_item(
-                uri=config["mongodb"]["ConnString"],
-                database=config["mongodb"]["Database"],
-                collection="products",
-                data={
-                    "product_name": product["product_name"],
-                    "product_code": product["product_code"],
-                    "store": product["store"]
-                }
-            )
-            product["product_id"] = mongo_product[0]["_id"]
-    # save receipt to mongo too
+            print("Sending products to market queue")
+            for product in products:
+                message = dict()
+                message["receipt_url"] = receipt_url
+                message["product"] = product
+                if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
+                    sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
+                elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
+                    sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
+        except TimeoutException:
+            # TODO: send problematic urls to an error queue
+            continue
     
-    save_receipt_data(
-        mongo_uri=config["mongodb"]["ConnString"],
-        database=config["mongodb"]["Database"],
-        products=products
-    )
     #save_to_csv(products)
