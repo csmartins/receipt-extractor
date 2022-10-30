@@ -12,7 +12,7 @@ import configparser
 import csv
 import logging
 import ast
-
+import traceback
 
 
 def get_table_line(driver, tr_id):
@@ -152,24 +152,40 @@ if __name__ == "__main__":
             # removing products from receipt data and substitute for empty list
             receipt_data["products"] = list()
             # save receipt to mongo
-            print("Saving receipt to mongo")
-            mongo_product_id = mongo.save_to_mongo(
-                    uri=config["mongodb"]["ConnString"],
-                    database=config["mongodb"]["Database"],
-                    collection="receipts",
-                    data=receipt_data
+            print("Search if receipt already exists")
+            result = mongo.count_items(
+                uri=config["mongodb"]["ConnString"],
+                database=config["mongodb"]["Database"],
+                collection="receipts",
+                data={
+                    "url": receipt_url
+                }
             )
-            print("Sending products to market queue")
-            for product in products:
-                message = dict()
-                message["receipt_url"] = receipt_url
-                message["product"] = product
-                if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
-                    sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
-                elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
-                    sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
-        except TimeoutException:
+            if result >= 1:
+                print("Receipt already processed skipping")
+            elif result == 0:
+                print("Saving receipt to mongo")
+                mongo_product_id = mongo.save_to_mongo(
+                        uri=config["mongodb"]["ConnString"],
+                        database=config["mongodb"]["Database"],
+                        collection="receipts",
+                        data=receipt_data
+                )
+                print("Sending products to market queue")
+                for product in products:
+                    message = dict()
+                    message["receipt_url"] = receipt_url
+                    message["product"] = product
+                    if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
+                        sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
+                    elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
+                        sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
+        except TimeoutException as e:
             # TODO: send problematic urls to an error queue
+            logging.error(traceback.format_exc())
+            continue
+        except Exception as e:
+            logging.error(traceback.format_exc())
             continue
     
     #save_to_csv(products)
