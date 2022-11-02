@@ -133,7 +133,7 @@ def save_receipt_data(mongo_uri, database, products):
 
 if __name__ == "__main__":
 
-    logging.basicConfig()
+    logging.basicConfig(level=logging.INFO)
     # logging.root.setLevel(logging.NOTSET)
 
     config = configparser.ConfigParser()
@@ -141,18 +141,21 @@ if __name__ == "__main__":
 
     while True:
         try:
-            receipt_message = ast.literal_eval(sqs.get_one_message(config["sqs"]["receipt_queue_url"]))
-            receipt_url = receipt_message['receipt_url']
+            receipt_message = sqs.get_one_message(config["sqs"]["receipt_queue_url"])
+            receipt_url = ast.literal_eval(receipt_message['Body'])['receipt_url']
+            
             selenium_service = Service(executable_path=config["selenium"]["DriverPath"])
             driver = webdriver.Chrome(service=selenium_service)
             receipt_data = extract_receipt_info(driver, receipt_url)
-            print(receipt_data)
-            products = receipt_data.pop("products")
+            
+            sqs.delete_message(config["sqs"]["receipt_queue_url"], receipt_message["ReceiptHandle"])
 
             # removing products from receipt data and substitute for empty list
+            products = receipt_data.pop("products")
             receipt_data["products"] = list()
+            
             # save receipt to mongo
-            print("Search if receipt already exists")
+            logging.info("Search if receipt already exists")
             result = mongo.count_items(
                 uri=config["mongodb"]["ConnString"],
                 database=config["mongodb"]["Database"],
@@ -162,16 +165,16 @@ if __name__ == "__main__":
                 }
             )
             if result >= 1:
-                print("Receipt already processed skipping")
+                logging.info("Receipt already processed skipping")
             elif result == 0:
-                print("Saving receipt to mongo")
+                logging.info("Saving receipt to mongo")
                 mongo_product_id = mongo.save_to_mongo(
                         uri=config["mongodb"]["ConnString"],
                         database=config["mongodb"]["Database"],
                         collection="receipts",
                         data=receipt_data
                 )
-                print("Sending products to market queue")
+                logging.info("Sending products to market queue")
                 for product in products:
                     message = dict()
                     message["receipt_url"] = receipt_url
@@ -183,6 +186,7 @@ if __name__ == "__main__":
                         sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
         except TimeoutException as e:
             # TODO: send problematic urls to an error queue
+            logging.error("An error ocurred during processing of the receipt")
             logging.error(traceback.format_exc())
             continue
         except Exception as e:

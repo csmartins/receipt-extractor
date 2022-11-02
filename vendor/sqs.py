@@ -43,7 +43,7 @@ def get_one_message(queue_url):
         logger.info("No messages in the queue")
         return None
     else:
-        return message['Body']
+        return message
 
 def send_one_message(queue_url, message_body, message_attributes=None):
     if not message_attributes:
@@ -60,3 +60,14 @@ def send_one_message(queue_url, message_body, message_attributes=None):
         raise error
     else:
         return response
+
+def delete_message(queue_url, handle):
+    try:
+        queue_attr = sqs.delete_message(
+            QueueUrl=queue_url,
+            ReceiptHandle=handle
+        )
+        return queue_attr
+    except ClientError as error:
+        logger.exception("Couldn't delete message %s from queue url: %s", handle, queue_url)
+        raise error
