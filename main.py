@@ -57,14 +57,17 @@ def save_to_csv(receipts):
 def get_payment_method(driver):
     try:
         # try first the path when receipt has discounts
+        logging.debug("Receipt with discount")
         payment_method = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][5]/label[@class='tx']")
     except NoSuchElementException:
         # if fails, it tries the path when doesn't
+        logging.debug("Receipt without discounts")
         payment_method = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='conteudo']/div[@id='totalNota']/div[@id='linhaTotal'][3]/label[@class='tx']")
     finally:
         return payment_method.text
 
 def extract_receipt_info(driver, receipt_url):
+    logging.info("Extracting receipt info from webpage")
     driver.get(receipt_url)
     try:
         page_contents = WebDriverWait(driver, 10).until(
@@ -73,20 +76,25 @@ def extract_receipt_info(driver, receipt_url):
         receipt_data = dict()
         receipt_data["url"] = receipt_url
 
+        logging.debug("Extract store")
         text_center_elements = driver.find_elements(By.CLASS_NAME, "txtCenter")
         for element in text_center_elements:
             if not element.get_attribute("id"):
                 receipt_data["store"] = element.find_element(By.CLASS_NAME, "txtTopo").text
         
+        logging.debug("Extract total")
         total_billing = driver.find_element(By.CSS_SELECTOR, ".totalNumb.txtMax").text
         receipt_data["total"] = total_billing
         
+        logging.debug("Extract payment method")
         receipt_data["payment"] = get_payment_method(driver)
         
+        logging.debug("Extract date")
         date = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='infos']/div[@class='ui-collapsible ui-collapsible-inset ui-corner-all ui-collapsible-themed-content'][1]/div[@class='ui-collapsible-content ui-body-inherit']/ul[@class='ui-listview']/li[@class='ui-li-static ui-body-inherit ui-first-child ui-last-child']")
         tmp_date = date.text.split("Emissão: ")[1]
         receipt_data["datetime"] = tmp_date.split(" - Via Consumidor")[0]
 
+        logging.debug("Extract products list")
         products = list()
         item_count = 1
         while(True):
@@ -95,7 +103,7 @@ def extract_receipt_info(driver, receipt_url):
                 products.append(product)
                 item_count = item_count + 1
             except NoSuchElementException:
-                print("End of products table, {0} products found".format(item_count-1))
+                logging.debug("End of products table, {0} products found".format(item_count-1))
                 break
         receipt_data["products"] = products
         return receipt_data
@@ -144,10 +152,12 @@ if __name__ == "__main__":
             receipt_message = sqs.get_one_message(config["sqs"]["receipt_queue_url"])
             receipt_url = ast.literal_eval(receipt_message['Body'])['receipt_url']
             
+            logging.info("Received a new receipt URL, processing")
             selenium_service = Service(executable_path=config["selenium"]["DriverPath"])
             driver = webdriver.Chrome(service=selenium_service)
             receipt_data = extract_receipt_info(driver, receipt_url)
             
+            logging.debug("Removing message from queue after processing")
             sqs.delete_message(config["sqs"]["receipt_queue_url"], receipt_message["ReceiptHandle"])
 
             # removing products from receipt data and substitute for empty list
@@ -155,7 +165,8 @@ if __name__ == "__main__":
             receipt_data["products"] = list()
             
             # save receipt to mongo
-            logging.info("Search if receipt already exists")
+            logging.info("Save receipt to mongo if doesn't exists yet")
+            logging.debug("Search if receipt already exists")
             result = mongo.count_items(
                 uri=config["mongodb"]["ConnString"],
                 database=config["mongodb"]["Database"],
@@ -165,25 +176,27 @@ if __name__ == "__main__":
                 }
             )
             if result >= 1:
-                logging.info("Receipt already processed skipping")
+                logging.debug("Receipt already processed skipping")
             elif result == 0:
-                logging.info("Saving receipt to mongo")
+                logging.debug("Saving receipt to mongo")
                 mongo_product_id = mongo.save_to_mongo(
                         uri=config["mongodb"]["ConnString"],
                         database=config["mongodb"]["Database"],
                         collection="receipts",
                         data=receipt_data
                 )
-                logging.info("Sending products to market queue")
-                for product in products:
-                    message = dict()
-                    message["receipt_url"] = receipt_url
-                    message["product"] = product
-                    message["product"]["store"] = receipt_data["store"]
-                    if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
-                        sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
-                    elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
-                        sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
+            # always send products messages to extractors to allow reprocessing
+            logging.info("Sending products to market queue")
+            for product in products:
+                message = dict()
+                message["receipt_url"] = receipt_url
+                message["product"] = product
+                message["product"]["store"] = receipt_data["store"]
+                
+                if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
+                    sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
+                elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
+                    sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
         except TimeoutException as e:
             # TODO: send problematic urls to an error queue
             logging.error("An error ocurred during processing of the receipt")

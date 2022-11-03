@@ -65,17 +65,17 @@ def extract_product_info(product):
         driver.quit()
 
 if __name__ == "__main__":
-    logging.basicConfig()
+    logging.basicConfig(level=logging.INFO)
     # logging.root.setLevel(logging.NOTSET)
 
     config = configparser.ConfigParser()
     config.read("config.ini")
 
     product_message = ast.literal_eval(sqs.get_one_message(config["sqs"]["hortifruti_queue_url"]))
-    product = extract_product_info(product_message["product"])
+    product = extract_product_info(product_message['Body']["product"])
 
     # In opensearch saving the product with all data needed
-    print("Save product info to opensearch")
+    logging.info("Save product info to opensearch")
     opensearch.save_to_opensearch(
         host=config["opensearch"]["Host"],
         port=config["opensearch"]["Port"],
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     )
 
     # In mongo saving only metadata about the product (no data related to a specific receipt)
-    print("Search if product already exists")
+    logging.info("Search if product already exists")
     result = mongo.count_items(
         uri=config["mongodb"]["ConnString"],
         database=config["mongodb"]["Database"],
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         }
     )
     if result == 0:
-        print("Save product metadata to mongo")
+        logging.info("Save product metadata to mongo")
         mongo_product = dict()
         mongo_product["product_name"] = product["product_name"]
         mongo_product["product_code"] = product["product_code"]
@@ -114,10 +114,10 @@ if __name__ == "__main__":
         #print("product saved", mongo_product_id)
         product["product_id"] = mongo_product_id
     elif result > 1:
-        print("Alert: duplicated product")
+        logging.warning("Alert: duplicated product")
         #TODO raise exception
     else:
-        print("Product already exists, skipping")
+        logging.info("Product already exists, skipping")
         mongo_product = mongo.search_item(
             uri=config["mongodb"]["ConnString"],
             database=config["mongodb"]["Database"],
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         product["product_id"] = mongo_product[0]["_id"]
     
     # update product id in receipt object in mongo along with other specific info of the purchase
-    receipt_url = product_message["receipt_url"]
+    receipt_url = product_message['Body']["receipt_url"]
     mongo_result = mongo.update_item(
         uri=config["mongodb"]["ConnString"],
         database=config["mongodb"]["Database"],

@@ -34,13 +34,12 @@ def get_one_message(queue_url):
             WaitTimeSeconds=10
         )
         for message in messages['Messages']:
-            print(message)
-            logger.info("Received message: %s: %s", message['MessageId'], message['Body'])
+            logger.debug("Received message: %s: %s", message['MessageId'], message['Body'])
     except ClientError as error:
         logger.exception("Couldn't receive any messages using queue URL: %s", queue_url)
         raise error
     except AttributeError as error:
-        logger.info("No messages in the queue")
+        logger.debug("No messages in the queue")
         return None
     else:
         return message
@@ -50,6 +49,7 @@ def send_one_message(queue_url, message_body, message_attributes=None):
         message_attributes = {}
     
     try:
+        logger.debug("Sending message to queue %s", queue_url)
         response = sqs.send_message(
             QueueUrl=queue_url,
             MessageBody=message_body,
@@ -63,6 +63,7 @@ def send_one_message(queue_url, message_body, message_attributes=None):
 
 def delete_message(queue_url, handle):
     try:
+        logger.debug("Deleting messaged")
         queue_attr = sqs.delete_message(
             QueueUrl=queue_url,
             ReceiptHandle=handle

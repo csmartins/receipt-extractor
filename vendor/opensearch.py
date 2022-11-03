@@ -1,4 +1,7 @@
 from opensearchpy import OpenSearch
+import logging
+
+logger = logging.getLogger(__name__)
 
 def save_to_opensearch(host, port, user, password, product):
 
@@ -28,7 +31,7 @@ def save_to_opensearch(host, port, user, password, product):
     # response = client.indices.create(index_name, body=index_body)
     # print(response)
 
-    print("Save product to Opensearch")
+    logging.info("Save product to Opensearch")
     response = client.index(
         index = index_name,
         body = product,

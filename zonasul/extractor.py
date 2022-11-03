@@ -60,7 +60,7 @@ if __name__ == "__main__":
     config.read("config.ini")
 
     product_message = ast.literal_eval(sqs.get_one_message(config["sqs"]["zonasul_queue_url"]))
-    product = extract_product_info(product_message["product"])
+    product = extract_product_info(product_message['Body']["product"])
 
     # In opensearch saving the product with all data needed
     print("Save product info to opensearch")
@@ -119,7 +119,7 @@ if __name__ == "__main__":
         product["product_id"] = mongo_product[0]["_id"]
     
     # update product id in receipt object in mongo along with other specific info of the purchase
-    receipt_url = product_message["receipt_url"]
+    receipt_url = product_message['Body']["receipt_url"]
     mongo_result = mongo.update_item(
         uri=config["mongodb"]["ConnString"],
         database=config["mongodb"]["Database"],
