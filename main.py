@@ -138,6 +138,10 @@ def save_receipt_data(mongo_uri, database, products):
             data=receipt_data
         )
 
+def fail_processing(error_message, message):
+    logging.error(error_message)
+    sqs.send_one_message(config["sqs"]["receipt_error_queue_url"], message)
+
 
 if __name__ == "__main__":
 
@@ -149,7 +153,11 @@ if __name__ == "__main__":
 
     while True:
         try:
+            logging.info("Waiting for message in queue")
             receipt_message = sqs.get_one_message(config["sqs"]["receipt_queue_url"])
+            if not receipt_message:
+                continue
+
             receipt_url = ast.literal_eval(receipt_message['Body'])['receipt_url']
             
             logging.info("Received a new receipt URL, processing")
@@ -157,6 +165,9 @@ if __name__ == "__main__":
             driver = webdriver.Chrome(service=selenium_service)
             receipt_data = extract_receipt_info(driver, receipt_url)
             
+            if not receipt_data:
+                fail_processing("Failed to extract receipt info", receipt_message['Body'])
+                continue
             logging.debug("Removing message from queue after processing")
             sqs.delete_message(config["sqs"]["receipt_queue_url"], receipt_message["ReceiptHandle"])
 

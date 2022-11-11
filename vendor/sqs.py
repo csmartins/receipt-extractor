@@ -41,6 +41,9 @@ def get_one_message(queue_url):
     except AttributeError as error:
         logger.debug("No messages in the queue")
         return None
+    except KeyError as error:
+        logger.debug("No messages in the queue")
+        return None
     else:
         return message
 

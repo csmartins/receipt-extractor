@@ -11,6 +11,7 @@ import time
 import logging
 import configparser
 import ast
+import traceback
 
 def extract_product_info(product_sku):
     zonasul_sku_search = "https://www.zonasul.com.br/{0}".format(product_sku)
@@ -52,6 +53,10 @@ def extract_product_info(product_sku):
     finally:
         driver.quit()
 
+def fail_processing(error_message, message):
+    logging.error(error_message)
+    sqs.send_one_message(config["sqs"]["hortifruti_error_queue_url"], message)
+
 if __name__ == "__main__":
     logging.basicConfig()
     # logging.root.setLevel(logging.NOTSET)
@@ -59,79 +64,91 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
 
-    product_message = ast.literal_eval(sqs.get_one_message(config["sqs"]["zonasul_queue_url"]))
-    product = extract_product_info(product_message['Body']["product"])
+    while True:
+        try:
+            logging.info("Waiting for message in queue")
+            message = sqs.get_one_message(config["sqs"]["zonasul_queue_url"])
+            product_message = ast.literal_eval(message['Body'])
+            product = extract_product_info(product_message["product"])
 
-    # In opensearch saving the product with all data needed
-    print("Save product info to opensearch")
-    opensearch.save_to_opensearch(
-        host=config["opensearch"]["Host"],
-        port=config["opensearch"]["Port"],
-        user=config["opensearch"]["User"],
-        password=config["opensearch"]["Password"],
-        product=product
-    )
+            if not product:
+                fail_processing("Product wasn't found or market website with error", str(product_message))
+                continue
 
-    # In mongo saving only metadata about the product (no data related to a specific receipt)
-    print("Search if product already exists")
-    result = mongo.count_items(
-        uri=config["mongodb"]["ConnString"],
-        database=config["mongodb"]["Database"],
-        collection="products",
-        data={
-            "product_name": product["product_name"],
-            "product_code": product["product_code"],
-            "store": product["store"]
-        }
-    )
-    if result == 0:
-        print("Save product metadata to mongo")
-        mongo_product = dict()
-        mongo_product["product_name"] = product["product_name"]
-        mongo_product["product_code"] = product["product_code"]
-        # TODO: unit test when product details extraction fails 
-        mongo_product["product_type"] = "" or product.get("product_type")
-        mongo_product["unity_type"] = product["unity_type"]
-        mongo_product["store"] = product["store"]
-        mongo_product_id = mongo.save_to_mongo(
-            uri=config["mongodb"]["ConnString"],
-            database=config["mongodb"]["Database"],
-            collection="products",
-            data=mongo_product
-        )
-        #print("product saved", mongo_product_id)
-        product["product_id"] = mongo_product_id
-    elif result > 1:
-        print("Alert: duplicated product")
-        #TODO raise exception
-    else:
-        print("Product already exists, skipping")
-        mongo_product = mongo.search_item(
-            uri=config["mongodb"]["ConnString"],
-            database=config["mongodb"]["Database"],
-            collection="products",
-            data={
-                "product_name": product["product_name"],
-                "product_code": product["product_code"],
-                "store": product["store"]
-            }
-        )
-        product["product_id"] = mongo_product[0]["_id"]
-    
-    # update product id in receipt object in mongo along with other specific info of the purchase
-    receipt_url = product_message['Body']["receipt_url"]
-    mongo_result = mongo.update_item(
-        uri=config["mongodb"]["ConnString"],
-        database=config["mongodb"]["Database"],
-        collection="receipts",
-        filter={"url": receipt_url},
-        change={"$push": {
-                    "products": {
-                        "product_id": product["product_id"],
-                        "product_quantity": product["product_quantity"],
-                        "unity_type": product["unity_type"],
-                        "total_value": product["total_value"]
-                    }
+            # In opensearch saving the product with all data needed
+            print("Save product info to opensearch")
+            opensearch.save_to_opensearch(
+                host=config["opensearch"]["Host"],
+                port=config["opensearch"]["Port"],
+                user=config["opensearch"]["User"],
+                password=config["opensearch"]["Password"],
+                product=product
+            )
+
+            # In mongo saving only metadata about the product (no data related to a specific receipt)
+            print("Search if product already exists")
+            result = mongo.count_items(
+                uri=config["mongodb"]["ConnString"],
+                database=config["mongodb"]["Database"],
+                collection="products",
+                data={
+                    "product_name": product["product_name"],
+                    "product_code": product["product_code"],
+                    "store": product["store"]
                 }
-            }
-    )
+            )
+            if result == 0:
+                print("Save product metadata to mongo")
+                mongo_product = dict()
+                mongo_product["product_name"] = product["product_name"]
+                mongo_product["product_code"] = product["product_code"]
+                # TODO: unit test when product details extraction fails 
+                mongo_product["product_type"] = "" or product.get("product_type")
+                mongo_product["unity_type"] = product["unity_type"]
+                mongo_product["store"] = product["store"]
+                mongo_product_id = mongo.save_to_mongo(
+                    uri=config["mongodb"]["ConnString"],
+                    database=config["mongodb"]["Database"],
+                    collection="products",
+                    data=mongo_product
+                )
+                #print("product saved", mongo_product_id)
+                product["product_id"] = mongo_product_id
+            elif result > 1:
+                print("Alert: duplicated product")
+                #TODO raise exception
+            else:
+                print("Product already exists, skipping")
+                mongo_product = mongo.search_item(
+                    uri=config["mongodb"]["ConnString"],
+                    database=config["mongodb"]["Database"],
+                    collection="products",
+                    data={
+                        "product_name": product["product_name"],
+                        "product_code": product["product_code"],
+                        "store": product["store"]
+                    }
+                )
+                product["product_id"] = mongo_product[0]["_id"]
+            
+            # update product id in receipt object in mongo along with other specific info of the purchase
+            receipt_url = product_message["receipt_url"]
+            mongo_result = mongo.update_item(
+                uri=config["mongodb"]["ConnString"],
+                database=config["mongodb"]["Database"],
+                collection="receipts",
+                filter={"url": receipt_url},
+                change={"$push": {
+                            "products": {
+                                "product_id": product["product_id"],
+                                "product_quantity": product["product_quantity"],
+                                "unity_type": product["unity_type"],
+                                "total_value": product["total_value"]
+                            }
+                        }
+                    }
+            )
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            fail_processing("An error ocurred during processing of the product", str(product_message))
+            continue
