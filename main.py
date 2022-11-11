@@ -201,9 +201,11 @@ if __name__ == "__main__":
             # TODO: send problematic urls to an error queue
             logging.error("An error ocurred during processing of the receipt")
             logging.error(traceback.format_exc())
+            sqs.send_one_message(config["sqs"]["receipt_error_queue_url"], receipt_url)
             continue
         except Exception as e:
             logging.error(traceback.format_exc())
+            sqs.send_one_message(config["sqs"]["receipt_error_queue_url"], receipt_url)
             continue
     
     #save_to_csv(products)
