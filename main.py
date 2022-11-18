@@ -168,9 +168,7 @@ if __name__ == "__main__":
             if not receipt_data:
                 fail_processing("Failed to extract receipt info", receipt_message['Body'])
                 continue
-            logging.debug("Removing message from queue after processing")
-            sqs.delete_message(config["sqs"]["receipt_queue_url"], receipt_message["ReceiptHandle"])
-
+            
             # removing products from receipt data and substitute for empty list
             products = receipt_data.pop("products")
             receipt_data["products"] = list()
@@ -208,6 +206,7 @@ if __name__ == "__main__":
                     sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
                 elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
                     sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
+            
         except TimeoutException as e:
             # TODO: send problematic urls to an error queue
             logging.error("An error ocurred during processing of the receipt")
@@ -218,5 +217,9 @@ if __name__ == "__main__":
             logging.error(traceback.format_exc())
             sqs.send_one_message(config["sqs"]["receipt_error_queue_url"], receipt_url)
             continue
+        finally:
+            logging.debug("Removing message from queue after processing")
+            if receipt_message:
+                sqs.delete_message(config["sqs"]["receipt_queue_url"], receipt_message["ReceiptHandle"])
     
     #save_to_csv(products)

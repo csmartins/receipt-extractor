@@ -6,13 +6,16 @@ import configparser
 
 
 from botocore.exceptions import ClientError
+from botocore.config import Config
 
 
 logger = logging.getLogger(__name__)
 
 config = configparser.ConfigParser()
 config.read("config.ini")
-sqs = boto3.client("sqs", endpoint_url=config["localstack"]["endpoint"])
+
+aws_config = Config(region_name = config["localstack"]["region"])
+sqs = boto3.client("sqs", endpoint_url=config["localstack"]["endpoint"], config=aws_config)
 
 def get_queue_info(queue_url):
     try:
