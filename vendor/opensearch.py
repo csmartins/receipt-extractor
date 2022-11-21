@@ -1,41 +1,61 @@
 from opensearchpy import OpenSearch
+from opensearchpy.exceptions import RequestError
 import logging
 
 logger = logging.getLogger(__name__)
 
-def save_to_opensearch(host, port, user, password, product):
+def save_to_opensearch(host, port, user, password, index_name, data):
 
-    client = OpenSearch(
-        hosts = [{'host': host, 'port': port}],
-        http_compress = True, # enables gzip compression for request bodies
-        http_auth = (user, password),
-        # client_cert = client_cert_path,
-        # client_key = client_key_path,
-        use_ssl = True,
-        verify_certs = False,
-        ssl_assert_hostname = False,
-        ssl_show_warn = False,
-        # ca_certs = ca_certs_path
-    )
+    try:
+        client = OpenSearch(
+            hosts = [{'host': host, 'port': port}],
+            http_compress = True, # enables gzip compression for request bodies
+            http_auth = (user, password),
+            # client_cert = client_cert_path,
+            # client_key = client_key_path,
+            use_ssl = True,
+            verify_certs = False,
+            ssl_assert_hostname = False,
+            ssl_show_warn = False,
+            # ca_certs = ca_certs_path
+        )
 
-    # Create an index with non-default settings.
-    index_name = 'products'
-    # index_body = {
-    #     'settings': {
-    #         'index': {
-    #         'number_of_shards': 4
-    #         }
-    #     }
-    # }
-    # print('\nCreating index:') 
-    # response = client.indices.create(index_name, body=index_body)
-    # print(response)
+        logging.info("Save product to Opensearch")
+        response = client.index(
+            index = index_name,
+            body = data,
+            refresh = True
+        )
+        client.close()
+    except Exception as er:
+        logging.critical("Failed to save on Opensearch")
+        logging.exception(er)
 
-    logging.info("Save product to Opensearch")
-    response = client.index(
-        index = index_name,
-        body = product,
-        refresh = True
-    )
-    # TODO: better failure treatment
-    # print(response)
+def create_index(host, port, user, password, index_name, mapping=None):
+
+    try:
+        client = OpenSearch(
+            hosts = [{'host': host, 'port': port}],
+            http_compress = True, # enables gzip compression for request bodies
+            http_auth = (user, password),
+            # client_cert = client_cert_path,
+            # client_key = client_key_path,
+            use_ssl = True,
+            verify_certs = False,
+            ssl_assert_hostname = False,
+            ssl_show_warn = False,
+            # ca_certs = ca_certs_path
+        )
+        
+        logging.debug('Creating opensearch index') 
+        response = client.indices.create(index_name, body=mapping)
+        logging.debug(response)
+
+        client.close()
+    except RequestError as er:
+        if "resource_already_exists_exception" in er.error:
+            return
+        else:
+            logging.critical("Failed to create index")
+            logging.exception(er)
+            raise er

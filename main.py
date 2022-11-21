@@ -92,8 +92,9 @@ def extract_receipt_info(driver, receipt_url):
         logging.debug("Extract date")
         date = driver.find_element(By.XPATH, "/html[@class='ui-mobile']/body[@class='ui-mobile-viewport ui-overlay-a']/div[@class='ui-page ui-page-theme-a ui-page-active']/div[@class='ui-content']/div[@id='infos']/div[@class='ui-collapsible ui-collapsible-inset ui-corner-all ui-collapsible-themed-content'][1]/div[@class='ui-collapsible-content ui-body-inherit']/ul[@class='ui-listview']/li[@class='ui-li-static ui-body-inherit ui-first-child ui-last-child']")
         tmp_date = date.text.split("Emissão: ")[1]
-        receipt_data["datetime"] = tmp_date.split(" - Via Consumidor")[0]
-
+        tmp_date = tmp_date.split(" - Via Consumidor")[0]
+        receipt_data["datetime"] = tmp_date.split("-03:00")[0]
+        
         logging.debug("Extract products list")
         products = list()
         item_count = 1
@@ -201,6 +202,7 @@ if __name__ == "__main__":
                 message["receipt_url"] = receipt_url
                 message["product"] = product
                 message["product"]["store"] = receipt_data["store"]
+                message["product"]["datetime"] = receipt_data["datetime"]
                 
                 if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
                     sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))

@@ -78,23 +78,46 @@ if __name__ == "__main__":
 
     while True:
         try:
+            message = None
+            product_message = None
+            product = None
             logging.info("Waiting for message in queue")
             message = sqs.get_one_message(config["sqs"]["hortifruti_queue_url"])
             product_message = ast.literal_eval(message['Body'])
+            logging.debug(product_message)
             product = extract_product_info(product_message["product"])
-
+            logging.debug(product)
             if not product:
                 fail_processing("Product wasn't found or market website with error", str(product_message))
                 continue
 
             # In opensearch saving the product with all data needed
+            logging.info("Create opensearch index if doesn't exists")
+            opensearch.create_index(
+                host=config["opensearch"]["Host"],
+                port=config["opensearch"]["Port"],
+                user=config["opensearch"]["User"],
+                password=config["opensearch"]["Password"],
+                index_name='products',
+                mapping={
+                    "mappings" : {
+                        "properties" :  {
+                            "datetime" : {
+                                "type" : "date",
+                                "format" : "dd/MM/yyyy HH:mm:ss"
+                            }
+                        }
+                    }
+                }
+            )
             logging.info("Save product info to opensearch")
             opensearch.save_to_opensearch(
                 host=config["opensearch"]["Host"],
                 port=config["opensearch"]["Port"],
                 user=config["opensearch"]["User"],
                 password=config["opensearch"]["Password"],
-                product=product
+                index_name='products',
+                data=product
             )
 
             # In mongo saving only metadata about the product (no data related to a specific receipt)
@@ -164,3 +187,7 @@ if __name__ == "__main__":
             logging.error(traceback.format_exc())
             fail_processing("An error ocurred during processing of the product", str(product_message))
             continue
+        finally:
+            logging.debug("Removing message from queue after processing")
+            if message:
+                sqs.delete_message(config["sqs"]["hortifruti_queue_url"], message["ReceiptHandle"])
