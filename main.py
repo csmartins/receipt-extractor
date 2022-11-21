@@ -13,6 +13,7 @@ import csv
 import logging
 import ast
 import traceback
+import time
 
 
 def get_table_line(driver, tr_id):
@@ -158,16 +159,22 @@ if __name__ == "__main__":
             receipt_message = sqs.get_one_message(config["sqs"]["receipt_queue_url"])
             if not receipt_message:
                 continue
-
+            
+            overall_start_time = time.time()
             receipt_url = ast.literal_eval(receipt_message['Body'])['receipt_url']
             
             logging.info("Received a new receipt URL, processing")
             selenium_service = Service(executable_path=config["selenium"]["DriverPath"])
             driver = webdriver.Chrome(service=selenium_service)
+            extract_start_time = time.time()
             receipt_data = extract_receipt_info(driver, receipt_url)
-            
+            extract_time = (time.time() - extract_start_time)*1000
+
             if not receipt_data:
                 fail_processing("Failed to extract receipt info", receipt_message['Body'])
+                overall_time = (time.time() - overall_start_time)*1000
+                mongo_save_time = 0
+                send_product_to_queue_time = 0
                 continue
             
             # removing products from receipt data and substitute for empty list
@@ -177,6 +184,7 @@ if __name__ == "__main__":
             # save receipt to mongo
             logging.info("Save receipt to mongo if doesn't exists yet")
             logging.debug("Search if receipt already exists")
+            mongo_save_start_time = time.time()
             result = mongo.count_items(
                 uri=config["mongodb"]["ConnString"],
                 database=config["mongodb"]["Database"],
@@ -195,9 +203,11 @@ if __name__ == "__main__":
                         collection="receipts",
                         data=receipt_data
                 )
+            mongo_save_time = (time.time() - mongo_save_start_time)*1000
             # always send products messages to extractors to allow reprocessing
             logging.info("Sending products to market queue")
             for product in products:
+                send_product_to_queue_start_time = time.time()
                 message = dict()
                 message["receipt_url"] = receipt_url
                 message["product"] = product
@@ -208,7 +218,8 @@ if __name__ == "__main__":
                     sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
                 elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
                     sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
-            
+                send_product_to_queue_time = (time.time() - send_product_to_queue_start_time)*1000
+            overall_time = (time.time() - overall_start_time)*1000
         except TimeoutException as e:
             # TODO: send problematic urls to an error queue
             logging.error("An error ocurred during processing of the receipt")
@@ -223,5 +234,17 @@ if __name__ == "__main__":
             logging.debug("Removing message from queue after processing")
             if receipt_message:
                 sqs.delete_message(config["sqs"]["receipt_queue_url"], receipt_message["ReceiptHandle"])
-    
+            
+            columns = ["full_extraction", "receipt_extraction", "mongo_save", "send_to_queue"]
+            with open('main_extractor_metrics.csv', 'a', newline='') as f:
+                csvwriter = csv.DictWriter(f, fieldnames=columns)
+                metrics = {
+                    "full_extraction": str(overall_time),
+                    "receipt_extraction": str(extract_time),
+                    "mongo_save": str(mongo_save_time),
+                    "send_to_queue": str(send_product_to_queue_time)
+                }
+                #csvwriter.writeheader()
+                csvwriter.writerow(metrics)
+
     #save_to_csv(products)

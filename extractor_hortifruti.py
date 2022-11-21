@@ -13,6 +13,7 @@ import logging
 import configparser
 import ast
 import traceback
+import csv
 
 def extract_product_info(product):
     product_sku = product["product_code"]
@@ -83,15 +84,26 @@ if __name__ == "__main__":
             product = None
             logging.info("Waiting for message in queue")
             message = sqs.get_one_message(config["sqs"]["hortifruti_queue_url"])
+            
+            overall_start_time = time.time()
             product_message = ast.literal_eval(message['Body'])
             logging.debug(product_message)
+
+            extract_start_time = time.time()
             product = extract_product_info(product_message["product"])
             logging.debug(product)
+            extract_time = (time.time() - extract_start_time)*1000
+
             if not product:
                 fail_processing("Product wasn't found or market website with error", str(product_message))
+                overall_time = (time.time() - overall_start_time)*1000
+                opensearch_save_time = 0
+                mongo_product_save_time = 0
+                mongo_receipt_update_time = 0
                 continue
 
             # In opensearch saving the product with all data needed
+            opensearch_save_start_time = time.time()
             logging.info("Create opensearch index if doesn't exists")
             opensearch.create_index(
                 host=config["opensearch"]["Host"],
@@ -119,9 +131,11 @@ if __name__ == "__main__":
                 index_name='products',
                 data=product
             )
+            opensearch_save_time = (time.time() - opensearch_save_start_time)*1000
 
             # In mongo saving only metadata about the product (no data related to a specific receipt)
             logging.info("Search if product already exists")
+            mongo_product_save_start_time = time.time()
             result = mongo.count_items(
                 uri=config["mongodb"]["ConnString"],
                 database=config["mongodb"]["Database"],
@@ -165,9 +179,11 @@ if __name__ == "__main__":
                     }
                 )
                 product["product_id"] = mongo_product[0]["_id"]
-            
+            mongo_product_save_time = (time.time() - mongo_product_save_start_time)*1000
+
             # update product id in receipt object in mongo along with other specific info of the purchase
             receipt_url = product_message["receipt_url"]
+            mongo_receipt_update_start_time = time.time()
             mongo_result = mongo.update_item(
                 uri=config["mongodb"]["ConnString"],
                 database=config["mongodb"]["Database"],
@@ -183,6 +199,8 @@ if __name__ == "__main__":
                         }
                     }
             )
+            mongo_receipt_update_time = (time.time() - mongo_receipt_update_start_time)*1000
+            overall_time = (time.time() - overall_start_time)*1000
         except Exception as e:
             logging.error(traceback.format_exc())
             fail_processing("An error ocurred during processing of the product", str(product_message))
@@ -191,3 +209,16 @@ if __name__ == "__main__":
             logging.debug("Removing message from queue after processing")
             if message:
                 sqs.delete_message(config["sqs"]["hortifruti_queue_url"], message["ReceiptHandle"])
+
+            columns = ["full_extraction", "product_extraction", "opensearch_save", "mongo_product_save", "mongo_receipt_update"]
+            with open('hortifruti_extractor_metrics.csv', 'a', newline='') as f:
+                csvwriter = csv.DictWriter(f, fieldnames=columns)
+                metrics = {
+                    "full_extraction": str(overall_time),
+                    "product_extraction": str(extract_time),
+                    "opensearch_save": str(opensearch_save_time),
+                    "mongo_product_save": str(mongo_product_save_time),
+                    "mongo_receipt_update": str(mongo_receipt_update_time)
+                }
+                #csvwriter.writeheader()
+                csvwriter.writerow(metrics)
