@@ -12,6 +12,7 @@ import logging
 import configparser
 import ast
 import traceback
+import csv
 
 def extract_product_info(product_sku):
     zonasul_sku_search = "https://www.zonasul.com.br/{0}".format(product_sku)
@@ -55,7 +56,7 @@ def extract_product_info(product_sku):
 
 def fail_processing(error_message, message):
     logging.error(error_message)
-    sqs.send_one_message(config["sqs"]["hortifruti_error_queue_url"], message)
+    sqs.send_one_message(config["sqs"]["zonasul_error_queue_url"], message)
 
 if __name__ == "__main__":
     logging.basicConfig()
@@ -87,6 +88,7 @@ if __name__ == "__main__":
                 opensearch_save_time = 0
                 mongo_product_save_time = 0
                 mongo_receipt_update_time = 0
+                extract_time = 0
                 continue
 
             # In opensearch saving the product with all data needed
@@ -191,14 +193,19 @@ if __name__ == "__main__":
         except Exception as e:
             logging.error(traceback.format_exc())
             fail_processing("An error ocurred during processing of the product", str(product_message))
+            overall_time = (time.time() - overall_start_time)*1000
+            opensearch_save_time = 0
+            mongo_product_save_time = 0
+            mongo_receipt_update_time = 0
+            extract_time = 0
             continue
         finally:
             logging.debug("Removing message from queue after processing")
             if message:
-                sqs.delete_message(config["sqs"]["hortifruti_queue_url"], message["ReceiptHandle"])
+                sqs.delete_message(config["sqs"]["zonasul_queue_url"], message["ReceiptHandle"])
 
             columns = ["full_extraction", "product_extraction", "opensearch_save", "mongo_product_save", "mongo_receipt_update"]
-            with open('hortifruti_extractor_metrics.csv', 'a', newline='') as f:
+            with open('zonasul_extractor_metrics.csv', 'a', newline='') as f:
                 csvwriter = csv.DictWriter(f, fieldnames=columns)
                 metrics = {
                     "full_extraction": str(overall_time),
