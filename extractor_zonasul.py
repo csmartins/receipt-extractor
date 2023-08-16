@@ -58,6 +58,21 @@ def fail_processing(error_message, message):
     logging.error(error_message)
     sqs.send_one_message(config["sqs"]["zonasul_error_queue_url"], message)
 
+def duplicated_product_extraction(receipt_url, product_id, product_quantity):
+    mongo_receipt = mongo.search_item(
+        uri=config["mongodb"]["ConnString"],
+        database=config["mongodb"]["Database"],
+        collection="receipts",
+        data={
+            "url": receipt_url
+        }
+    )
+    # logging.debug(mongo_receipt)
+    for receipt_product in mongo_receipt[0]["products"]:
+        if receipt_product["product_id"] == product_id and receipt_product["product_quantity"] == product_quantity:
+            return True
+    return False
+
 if __name__ == "__main__":
     logging.basicConfig()
     # logging.root.setLevel(logging.NOTSET)
@@ -75,9 +90,11 @@ if __name__ == "__main__":
 
             overall_start_time = time.time()
             product_message = ast.literal_eval(message['Body'])
+            logging.debug("Got product from queue")
             logging.debug(product_message)
 
             extract_start_time = time.time()
+            logging.info("Extracting product data from Zona Sul website")
             product = extract_product_info(product_message["product"])
             logging.debug(product)
             extract_time = (time.time() - extract_start_time)*1000
@@ -90,37 +107,6 @@ if __name__ == "__main__":
                 mongo_receipt_update_time = 0
                 extract_time = 0
                 continue
-
-            # In opensearch saving the product with all data needed
-            opensearch_save_start_time = time.time()
-            logging.info("Create opensearch index if doesn't exists")
-            opensearch.create_index(
-                host=config["opensearch"]["Host"],
-                port=config["opensearch"]["Port"],
-                user=config["opensearch"]["User"],
-                password=config["opensearch"]["Password"],
-                index_name='products',
-                mapping={
-                    "mappings" : {
-                        "properties" :  {
-                            "datetime" : {
-                                "type" : "date",
-                                "format" : "dd/MM/yyyy HH:mm:ss"
-                            }
-                        }
-                    }
-                }
-            )
-            logging.info("Save product info to opensearch")
-            opensearch.save_to_opensearch(
-                host=config["opensearch"]["Host"],
-                port=config["opensearch"]["Port"],
-                user=config["opensearch"]["User"],
-                password=config["opensearch"]["Password"],
-                index_name='products',
-                data=product
-            )
-            opensearch_save_time = (time.time() - opensearch_save_start_time)*1000
 
             # In mongo saving only metadata about the product (no data related to a specific receipt)
             logging.info("Search if product already exists")
@@ -156,7 +142,7 @@ if __name__ == "__main__":
                 logging.warning("Alert: duplicated product")
                 #TODO raise exception
             else:
-                logging.info("Product already exists, skipping")
+                logging.info("Product already exists, getting product info")
                 mongo_product = mongo.search_item(
                     uri=config["mongodb"]["ConnString"],
                     database=config["mongodb"]["Database"],
@@ -172,24 +158,62 @@ if __name__ == "__main__":
             
             # update product id in receipt object in mongo along with other specific info of the purchase
             receipt_url = product_message["receipt_url"]
-            mongo_receipt_update_start_time = time.time()
-            mongo_result = mongo.update_item(
-                uri=config["mongodb"]["ConnString"],
-                database=config["mongodb"]["Database"],
-                collection="receipts",
-                filter={"url": receipt_url},
-                change={"$push": {
-                            "products": {
-                                "product_id": product["product_id"],
-                                "product_quantity": product["product_quantity"],
-                                "unity_type": product["unity_type"],
-                                "total_value": product["total_value"]
+
+            # check if product isn't already listed before adding to receipts
+            if not duplicated_product_extraction(receipt_url, product["product_id"], product["product_quantity"]):               
+                mongo_receipt_update_start_time = time.time()
+                mongo_result = mongo.update_item(
+                    uri=config["mongodb"]["ConnString"],
+                    database=config["mongodb"]["Database"],
+                    collection="receipts",
+                    filter={"url": receipt_url},
+                    change={"$push": {
+                                "products": {
+                                    "product_id": product["product_id"],
+                                    "product_quantity": product["product_quantity"],
+                                    "unity_type": product["unity_type"],
+                                    "total_value": product["total_value"]
+                                }
+                            }
+                        }
+                )
+                mongo_receipt_update_time = (time.time() - mongo_receipt_update_start_time)*1000
+                
+                # In opensearch saving the product with all data needed
+                opensearch_save_start_time = time.time()
+                logging.info("Create opensearch index if doesn't exists")
+                opensearch.create_index(
+                    host=config["opensearch"]["Host"],
+                    port=config["opensearch"]["Port"],
+                    user=config["opensearch"]["User"],
+                    password=config["opensearch"]["Password"],
+                    index_name='products',
+                    mapping={
+                        "mappings" : {
+                            "properties" :  {
+                                "datetime" : {
+                                    "type" : "date",
+                                    "format" : "dd/MM/yyyy HH:mm:ss"
+                                }
                             }
                         }
                     }
-            )
-            mongo_receipt_update_time = (time.time() - mongo_receipt_update_start_time)*1000
-            overall_time = (time.time() - overall_start_time)*1000
+                )
+                logging.info("Save product info to opensearch")
+                opensearch.save_to_opensearch(
+                    host=config["opensearch"]["Host"],
+                    port=config["opensearch"]["Port"],
+                    user=config["opensearch"]["User"],
+                    password=config["opensearch"]["Password"],
+                    index_name='products',
+                    data=product
+                )
+                opensearch_save_time = (time.time() - opensearch_save_start_time)*1000
+                overall_time = (time.time() - overall_start_time)*1000
+            else:
+                logging.info("Product already extracted and listed on the receipt, skipping save")
+                overall_time = (time.time() - overall_start_time)*1000
+                opensearch_save_time = 0
         except Exception as e:
             logging.error(traceback.format_exc())
             fail_processing("An error ocurred during processing of the product", str(product_message))

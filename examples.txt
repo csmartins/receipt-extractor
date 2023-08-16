@@ -221,3 +221,54 @@ aws --endpoint-url http://localhost:4566 sqs send-message --queue-url http://loc
 aws --endpoint-url http://localhost:4566 sqs send-message --queue-url http://localhost:4566/000000000000/receipts --message-body "{'receipt_url':'http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220933381286902600650100003741551010017060|2|1|3|7AF9F6B08374E63DC128920FD1A64D39963C075E'}"
 aws --endpoint-url http://localhost:4566 sqs send-message --queue-url http://localhost:4566/000000000000/receipts --message-body "{'receipt_url':'http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220333381286902198650120002045771012319989|2|1|3|80274953E440D7E2EBFAF4CD943B42F5A8A9E4B0'}"
 aws --endpoint-url http://localhost:4566 sqs send-message --queue-url http://localhost:4566/000000000000/receipts --message-body "{'receipt_url':'http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220533381286902198650120002233721012059483|2|1|3|43E46AADFC046A8352B9D27342F3D0D7056215BD'}"
+
+
+{
+    "MessageId": "223ea7bd-0dd2-426d-bf12-e5648d69f98a",
+    "ReceiptHandle": "Mzg0Zjc1ZWYtMzgxMi00Mzg1LWJmOWMtODU0ZGU2ODA4Mjg3IGFybjphd3M6c3FzOnVzLWVhc3QtMTowMDAwMDAwMDAwMDA6aG9ydGlmcnV0aSAyMjNlYTdiZC0wZGQyLTQyNmQtYmYxMi1lNTY0OGQ2OWY5OGEgMTY2ODEzNzkxNS40MTgzNjU3",
+    "MD5OfBody": "3e6029d36f0219170695f1fd123b32a8",
+    "Body": {
+        "receipt_url": "http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220331487473003538650010002551641625634243|2|1|2|d953fa67b328f9812dafcbad42739acef04e655c",
+        "product": {
+            "product_name": "CREME DE RICOTA TIRO",
+            "product_code": "143470",
+            "product_quantity": "1",
+            "unity_type": "UN",
+            "unity_value": "7,49",
+            "total_value": "7,49",
+            "store": "HORTIGIL HORTIFRUTI S/A"
+        }
+    }
+}
+
+db.receipts.update(
+  { _id: ObjectId("635dea5953f4763f05fdfdee") },
+  {
+    $set: {
+      products: []
+    }
+  }
+)
+
+
+db.receipts.update(
+  { _id: ObjectId("637c391bf21314fa9b188117") },
+  {
+    $set: {
+      products: []
+    }
+  }
+)
+
+db.receipts.update(
+  { _id: ObjectId("637c3924f21314fa9b18811d") },
+  {
+    $set: {
+      products: []
+    }
+  }
+)
+
+aws --endpoint-url http://localhost:4566 sqs send-message --queue-url http://localhost:4566/000000000000/receipts --message-body "{'receipt_url': 'http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220331487473003538650010002551641625634243|2|1|2|d953fa67b328f9812dafcbad42739acef04e655c'}"
+aws --endpoint-url http://localhost:4566 sqs send-message --queue-url http://localhost:4566/000000000000/receipts --message-body "{'receipt_url': 'http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33220131487473012103650010000504261597035626|2|1|2|da7ae607e7059ea7d2249e2a59b23386dee0a32f'}"
+aws --endpoint-url http://localhost:4566 sqs send-message --queue-url http://localhost:4566/000000000000/receipts --message-body "{'receipt_url': 'http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33211231487473012103650010000453911126451944|2|1|2|da7ae607e7059ea7d2249e2a59b23386dee0a32f'}"
