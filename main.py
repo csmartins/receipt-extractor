@@ -7,6 +7,7 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.service import Service
 from vendor import mongo
 from vendor import sqs
+from datetime import date
 
 import configparser
 import csv
@@ -159,20 +160,20 @@ if __name__ == "__main__":
             receipt_message = sqs.get_one_message(config["sqs"]["receipt_queue_url"])
             if not receipt_message:
                 continue
-            
+            print(receipt_message)
             overall_start_time = time.time()
-            receipt_url = ast.literal_eval(receipt_message['Body'])['receipt_url']
+            receipt_url = ast.literal_eval(receipt_message['Body'].replace('null', 'None'))['url']
             
             logging.info("Received a new receipt URL, processing")
             selenium_service = Service(executable_path=config["selenium"]["DriverPath"])
             driver = webdriver.Chrome(service=selenium_service)
             extract_start_time = time.time()
             receipt_data = extract_receipt_info(driver, receipt_url)
-            extract_time = (time.time() - extract_start_time)*1000
+            extract_time = (time.time() - extract_start_time)#*1000
 
             if not receipt_data:
                 fail_processing("Failed to extract receipt info", receipt_message['Body'])
-                overall_time = (time.time() - overall_start_time)*1000
+                overall_time = (time.time() - overall_start_time)#*1000
                 mongo_save_time = 0
                 send_product_to_queue_time = 0
                 continue
@@ -193,8 +194,39 @@ if __name__ == "__main__":
                     "url": receipt_url
                 }
             )
-            if result >= 1:
-                logging.debug("Receipt already processed skipping")
+            if result == 1:
+                result = mongo.search_item(
+                    uri=config["mongodb"]["ConnString"],
+                    database=config["mongodb"]["Database"],
+                    collection="receipts",
+                    data={
+                        "url": receipt_url
+                    }
+                )
+                result[0].pop("_id")
+                # result[0].pop("status")
+                print(result)
+                print(receipt_data)
+                if len(result[0].keys()) == 1:
+                    mongo_product_id = mongo.update_item(
+                        uri=config["mongodb"]["ConnString"],
+                        database=config["mongodb"]["Database"],
+                        collection="receipts",
+                        filter={
+                            "url": receipt_url
+                        },
+                        change={
+                            "$set": { 
+                                "store": receipt_data["store"],
+                                "total": receipt_data["total"],
+                                "payment": receipt_data["payment"],
+                                "datetime": receipt_data["datetime"],
+                                "products": receipt_data["products"],
+                            }
+                        }
+                )
+                else:
+                    logging.debug("Receipt already processed skipping")
             elif result == 0:
                 logging.debug("Saving receipt to mongo")
                 mongo_product_id = mongo.save_to_mongo(
@@ -203,7 +235,9 @@ if __name__ == "__main__":
                         collection="receipts",
                         data=receipt_data
                 )
-            mongo_save_time = (time.time() - mongo_save_start_time)*1000
+            elif result >= 1:
+                logging.error("Multiple duplicated receipts found: {0}".format(receipt_url))
+            mongo_save_time = (time.time() - mongo_save_start_time)#*1000
             # always send products messages to extractors to allow reprocessing
             logging.info("Sending products to market queue")
             for product in products:
@@ -218,8 +252,8 @@ if __name__ == "__main__":
                     sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
                 elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
                     sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
-                send_product_to_queue_time = (time.time() - send_product_to_queue_start_time)*1000
-            overall_time = (time.time() - overall_start_time)*1000
+                send_product_to_queue_time = (time.time() - send_product_to_queue_start_time)#*1000
+            overall_time = (time.time() - overall_start_time)##*1000
         except TimeoutException as e:
             # TODO: send problematic urls to an error queue
             logging.error("An error ocurred during processing of the receipt")
@@ -236,7 +270,8 @@ if __name__ == "__main__":
                 sqs.delete_message(config["sqs"]["receipt_queue_url"], receipt_message["ReceiptHandle"])
             
             columns = ["full_extraction", "receipt_extraction", "mongo_save", "send_to_queue"]
-            with open('main_extractor_metrics.csv', 'a', newline='') as f:
+            file_name = 'main_extractor_metrics_' + str(date.today()) + '.csv'
+            with open(file_name, 'a', newline='') as f:
                 csvwriter = csv.DictWriter(f, fieldnames=columns)
                 metrics = {
                     "full_extraction": str(overall_time),
