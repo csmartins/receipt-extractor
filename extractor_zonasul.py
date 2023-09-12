@@ -16,6 +16,7 @@ import csv
 
 def extract_product_info(product_sku):
     zonasul_sku_search = "https://www.zonasul.com.br/{0}".format(product_sku)
+    # print(zonasul_sku_search)
     opts = webdriver.ChromeOptions()
     opts.add_argument("--window-size=2560,1440")
 
@@ -42,7 +43,12 @@ def extract_product_info(product_sku):
         # the script gets the most granular (last) because its easier
         product_type_path = driver.find_elements(By.CLASS_NAME, "vtex-breadcrumb-1-x-link")
         product_type = product_type_path[-2].text
-        return (product_name, product_type, product_sku)
+        product = {
+            "product_name": product_name,
+            "product_type": product_type,
+            "product_code": product_sku
+        }
+        return product
     except NoSuchElementException:
         raise
     except TimeoutException:
@@ -67,7 +73,7 @@ def duplicated_product_extraction(receipt_url, product_id, product_quantity):
             "url": receipt_url
         }
     )
-    # logging.debug(mongo_receipt)
+    # print(mongo_receipt)
     for receipt_product in mongo_receipt[0]["products"]:
         if receipt_product["product_id"] == product_id and receipt_product["product_quantity"] == product_quantity:
             return True
@@ -87,27 +93,31 @@ if __name__ == "__main__":
             product = None
             logging.info("Waiting for message in queue")
             message = sqs.get_one_message(config["sqs"]["zonasul_queue_url"])
-
+            logging.debug(message)
             overall_start_time = time.time()
             product_message = ast.literal_eval(message['Body'])
             logging.debug("Got product from queue")
             logging.debug(product_message)
+            product = product_message["product"]
 
             extract_start_time = time.time()
             logging.info("Extracting product data from Zona Sul website")
-            product = extract_product_info(product_message["product"])
-            logging.debug(product)
-            extract_time = (time.time() - extract_start_time)*1000
+            product_extraction = extract_product_info(product["product_code"])
+            logging.debug(product_extraction)
+            extract_time = (time.time() - extract_start_time)
 
-            if not product:
+            if not product_extraction:
                 fail_processing("Product wasn't found or market website with error", str(product_message))
-                overall_time = (time.time() - overall_start_time)*1000
+                overall_time = (time.time() - overall_start_time)
                 opensearch_save_time = 0
                 mongo_product_save_time = 0
                 mongo_receipt_update_time = 0
                 extract_time = 0
                 continue
-
+            
+            product["product_name"] = product_extraction["product_name"]
+            product["product_type"] = product_extraction["product_type"]
+            logging.debug(product)
             # In mongo saving only metadata about the product (no data related to a specific receipt)
             logging.info("Search if product already exists")
             mongo_product_save_start_time = time.time()
@@ -154,7 +164,7 @@ if __name__ == "__main__":
                     }
                 )
                 product["product_id"] = mongo_product[0]["_id"]
-            mongo_product_save_time = (time.time() - mongo_product_save_start_time)*1000
+            mongo_product_save_time = (time.time() - mongo_product_save_start_time)
             
             # update product id in receipt object in mongo along with other specific info of the purchase
             receipt_url = product_message["receipt_url"]
@@ -177,7 +187,7 @@ if __name__ == "__main__":
                             }
                         }
                 )
-                mongo_receipt_update_time = (time.time() - mongo_receipt_update_start_time)*1000
+                mongo_receipt_update_time = (time.time() - mongo_receipt_update_start_time)
                 
                 # In opensearch saving the product with all data needed
                 opensearch_save_start_time = time.time()
@@ -200,6 +210,7 @@ if __name__ == "__main__":
                     }
                 )
                 logging.info("Save product info to opensearch")
+                product.pop('product_id')
                 opensearch.save_to_opensearch(
                     host=config["opensearch"]["Host"],
                     port=config["opensearch"]["Port"],
@@ -208,16 +219,16 @@ if __name__ == "__main__":
                     index_name='products',
                     data=product
                 )
-                opensearch_save_time = (time.time() - opensearch_save_start_time)*1000
-                overall_time = (time.time() - overall_start_time)*1000
+                opensearch_save_time = (time.time() - opensearch_save_start_time)
+                overall_time = (time.time() - overall_start_time)
             else:
                 logging.info("Product already extracted and listed on the receipt, skipping save")
-                overall_time = (time.time() - overall_start_time)*1000
+                overall_time = (time.time() - overall_start_time)
                 opensearch_save_time = 0
         except Exception as e:
             logging.error(traceback.format_exc())
             fail_processing("An error ocurred during processing of the product", str(product_message))
-            overall_time = (time.time() - overall_start_time)*1000
+            overall_time = (time.time() - overall_start_time)
             opensearch_save_time = 0
             mongo_product_save_time = 0
             mongo_receipt_update_time = 0
@@ -238,5 +249,5 @@ if __name__ == "__main__":
                     "mongo_product_save": str(mongo_product_save_time),
                     "mongo_receipt_update": str(mongo_receipt_update_time)
                 }
-                #csvwriter.writeheader()
+                # csvwriter.writeheader()
                 csvwriter.writerow(metrics)
