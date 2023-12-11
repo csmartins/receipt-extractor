@@ -248,7 +248,7 @@ if __name__ == "__main__":
                 message["product"]["store"] = receipt_data["store"]
                 message["product"]["datetime"] = receipt_data["datetime"]
                 
-                if receipt_data["store"] == "HORTIGIL HORTIFRUTI S/A":
+                if receipt_data["store"] in ["HORTIGIL HORTIFRUTI S/A", "HORTIFRUTI NOVO LEME LTDA"]: 
                     sqs.send_one_message(config["sqs"]["hortifruti_queue_url"], str(message))
                 elif "SUPERMERCADO ZONA SUL SA" in receipt_data["store"]:
                     sqs.send_one_message(config["sqs"]["zonasul_queue_url"], str(message))
