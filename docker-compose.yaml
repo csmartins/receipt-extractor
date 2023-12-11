@@ -10,6 +10,7 @@ services:
       - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
       - bootstrap.memory_lock=true # along with the memlock settings below, disables swapping
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
+      - logger.org.opensearch.index.reindex=error
     ulimits:
       memlock:
         soft: -1
@@ -26,7 +27,7 @@ services:
       - opensearch-net
     logging:
       options:
-        max-size: "250m"
+        max-size: "2m"
         max-file: "3"
   opensearch-node2:
     image: opensearchproject/opensearch:2.3.0
@@ -51,7 +52,7 @@ services:
       - opensearch-net
     logging:
       options:
-        max-size: "250m"
+        max-size: "2m"
         max-file: "3"
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.3.0
