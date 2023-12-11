@@ -4,13 +4,19 @@ start-all-dependencies:
 start-mongo:
 	docker-compose up -d mongodb
 
+start-localstack:
+	docker-compose up -d localstack
+
+start-opensearch:
+	docker-compose up -d opensearch-node1 opensearch-node2 opensearch-dashboards
+
 create-all-queues:
-	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name receipts
-	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name receipts-error
-	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name hortifruti
-	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name hortifruti-error
-	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name zonasul
-	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name zonasul-error
+	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name receipts --output text
+	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name receipts-error --output text
+	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name hortifruti --output text
+	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name hortifruti-error --output text
+	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name zonasul --output text
+	aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name zonasul-error --output text
 
 setup: start-all-dependencies
 	pipenv run make create-all-queues
