@@ -53,3 +53,5 @@ db.receipts.update(
     }
   }
 )
+
+db.getCollection("receipts").deleteOne({'url':'http://www4.fazenda.rj.gov.br/consultaNFCe/QRCode?p=33230900776574204312650010000531621494998083|2|1|1|4af16734cd6d533e160004dcdb31141a696134f2'})
