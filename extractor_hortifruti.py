@@ -61,7 +61,7 @@ def extract_product_info(product):
     except NoSuchElementException:
         raise
     except TimeoutException:
-        if driver.find_element(By.CLASS_NAME, "errorView-root-2vM"):
+        if driver.find_element(By.CLASS_NAME, "errorView-root-2vM") or driver.find_element(By.CLASS_NAME, "indicator-message-1g9"):
             return None
     finally:
         driver.quit()
@@ -103,7 +103,7 @@ if __name__ == "__main__":
             overall_start_time = time.time()
             product_message = ast.literal_eval(message['Body'])
             logging.debug("Got product from queue")
-            logging.debug(product_message)
+            logging.info(product_message)
 
             extract_start_time = time.time()
             logging.info("Extracting product data from Hortifruti website")
@@ -235,16 +235,17 @@ if __name__ == "__main__":
             logging.debug("Removing message from queue after processing")
             if message:
                 sqs.delete_message(config["sqs"]["hortifruti_queue_url"], message["ReceiptHandle"])
+            logging.info("Extraction finished")
 
-            columns = ["full_extraction", "product_extraction", "opensearch_save", "mongo_product_save", "mongo_receipt_update"]
-            with open('hortifruti_extractor_metrics.csv', 'a', newline='') as f:
-                csvwriter = csv.DictWriter(f, fieldnames=columns)
-                metrics = {
-                    "full_extraction": str(overall_time),
-                    "product_extraction": str(extract_time),
-                    "opensearch_save": str(opensearch_save_time),
-                    "mongo_product_save": str(mongo_product_save_time),
-                    "mongo_receipt_update": str(mongo_receipt_update_time)
-                }
-                #csvwriter.writeheader()
-                csvwriter.writerow(metrics)
+            # columns = ["full_extraction", "product_extraction", "opensearch_save", "mongo_product_save", "mongo_receipt_update"]
+            # with open('hortifruti_extractor_metrics.csv', 'a', newline='') as f:
+            #     csvwriter = csv.DictWriter(f, fieldnames=columns)
+            #     metrics = {
+            #         "full_extraction": str(overall_time),
+            #         "product_extraction": str(extract_time),
+            #         "opensearch_save": str(opensearch_save_time),
+            #         "mongo_product_save": str(mongo_product_save_time),
+            #         "mongo_receipt_update": str(mongo_receipt_update_time)
+            #     }
+            #     #csvwriter.writeheader()
+            #     csvwriter.writerow(metrics)
